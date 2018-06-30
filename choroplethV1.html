@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>D3: Victoria Rental Choropleth</title>
+    <script type="text/javascript" src="d3.v3.js"></script>
+    <style type="text/css">
+        path{
+				stroke:white;
+				stroke-width: 1px;
+			}
+
+		body{
+				font-family: Arial, sans-serif;
+			}
+			
+		.legend {
+					font-size: 13px;
+				}
+ 
+		div.tooltip {
+						position: absolute;
+						text-align: center;
+						width: 150px;
+						height: 25px;
+						padding: 2px;
+						font-size: 11px;
+						background: #FFFFE0;
+						border: 1px;
+						border-radius: 8px;
+						pointer-events: none;
+					}
+    </style>
+</head>
+<body>
+    <script type="text/javascript">
+
+        //Define Width and height
+        var w = 1500;
+        var h = 900;
+        
+		// Setting color domains(intervals of values) for the map and legend
+		var color_domain = [300, 350, 400, 450, 500]
+		var ext_color_domain = [0, 300, 350, 400, 450, 500]
+		var legend_labels = ["< 300", "300-349", "350-399", "400-449", "450-500", "> 500"]              
+		var color = d3.scale.threshold()
+		.domain(color_domain)
+		.range(["#adfcad", "#ffcb40", "#ffba00", "#ff7d73", "#ff4e40", "#ff1300"]);
+		
+        //Define map projection
+        var projection = d3.geo.mercator()
+                               .translate([-43000, -11700])
+                               .scale([108000]);
+
+        //Define path generator
+        var path = d3.geo.path()
+                         .projection(projection);
+						 
+		//Specify zooming behavior		 
+		var zoom = d3.behavior.zoom()
+		.translate(projection.translate())
+		.scale(projection.scale())
+		.scaleExtent([10800, 1080000])
+		.on("zoom", zoomed);
+
+        //Create SVG element
+        var svg = d3.select("body")
+                    .append("svg")
+                    .attr("width", w)
+                    .attr("height", h);
+		
+		
+		var g = svg.append("g");
+				   
+        //Load in rental data
+        d3.csv("RentDataV1.csv", function (data) {      
+            //Load in GeoJSON data
+            d3.json("viclocalitysim.json", function (json) {
+
+                //Merge the rental data and GeoJSON
+                //Loop through once for each rental data value
+                for (var i = 0; i < data.length; i++) {
+
+                    //Grab suburb name
+                    var dataLocality = data[i].locality.toUpperCase();
+
+                    //Grab rental value and convert to upper case for matching
+                    var dataValue = data[i].value;
+
+                    //Find the corresponding suburb inside the GeoJSON
+                    for (var j = 0; j < json.features.length; j++) {
+						
+						//Grab surbutb names form GeoJSON and convert to upper case for matching
+                        var jsonLocality = json.features[j].properties.VIC_LOCA_2.toUpperCase();
+
+                        if (dataLocality == jsonLocality) {
+                            //Assign rental data if suburb names match between both GeoJson and rental data
+                            json.features[j].properties.value = dataValue;
+                        }
+							//Assign suburb names
+							json.features[j].properties.locality = json.features[j].properties.VIC_LOCA_2.toUpperCase();
+                    }
+                }
+				
+                //Bind data and create one path per GeoJSON feature
+                svg.selectAll("path")
+                   .data(json.features)
+                   .enter()
+                   .append("path")
+                   .attr("d", path)
+				   .call(zoom)
+                   .style("fill", function (d) {
+                       //Get data value
+                       var value = d.properties.value;
+
+                       if (value) {
+                           //If value exists, return appropriate color
+                           return color(value);
+                       } else {
+                           //If value is undefined, return grey color
+                           return "#ccc";
+                       }
+                   })
+					
+					//Define color change and text tooltip on when mouseover
+				    .on("mouseover", function(d) {
+					var value = d.properties.value;
+					var locality = d.properties.locality;
+                    var xPosition = d3.mouse(this)[0];
+                    var yPosition = d3.mouse(this)[1];
+				svg.append("text")
+				   .data(json.features)
+                   .attr("id", "tooltip")
+                   .attr("x", xPosition)
+                   .attr("y", yPosition)
+                   .attr("text-anchor", "middle")
+                   .attr("font-family", "sans-serif")
+                   .attr("font-size", "15px")
+                   .attr("font-weight", "bold")
+                   .attr("fill", "black")
+                   .text(function(d) {
+                    if (value) {
+                        return locality+" "+"RENTAL:"+value;
+                    } else {
+                        return locality+" "+"RENTAL UNAVAILABLE";
+                    }});
+					d3.select(this)
+                    .style("fill", "blue");
+					})
+					
+					//Remove color change and text tooltip on when mouseover
+					.on("mouseout", function(d) {
+                    var value = d.properties.value;					
+                    d3.select("#tooltip").remove();
+                    d3.select(this)
+                    .transition()
+                    .duration(500)
+                    .style("fill", function(d) {
+                    if (value) {
+                        return color(value);
+                    } else {
+                        return "#ccc";
+                    }});
+					});
+            });
+					
+			//Adding legend for our Choropleth
+			var legend = svg.selectAll("g.legend")
+			.data(ext_color_domain)
+			.enter().append("g")
+			.attr("class", "legend");
+
+			var ls_w = 20, ls_h = 20;
+
+			legend.append("rect")
+			.attr("x", 1370)
+			.attr("y", function(d, i){ return h - (i*ls_h) - 2*ls_h;})
+			.attr("width", ls_w)
+			.attr("height", ls_h)
+			.style("fill", function(d, i) { return color(d); })
+			.style("opacity", 0.8);
+
+			legend.append("text")
+			.attr("x", 1400)
+			.attr("y", function(d, i){ return h - (i*ls_h) - ls_h - 4;})
+			.text(function(d, i){ return legend_labels[i]; });
+        });
+		
+		//Define zooming function
+		function zoomed() {
+							projection.translate(d3.event.translate).scale(d3.event.scale);
+							svg.selectAll("path").attr("d", path);}
+    </script>
+</body>
+</html>
